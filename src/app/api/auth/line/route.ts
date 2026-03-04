@@ -1,25 +1,33 @@
 import { NextResponse } from "next/server";
-import crypto from "crypto";
+import { createLineOAuthState } from "@/lib/line-oauth-state";
+
+function isLocalHost(hostname: string) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
 
 function getCallbackUrl(request: Request) {
-  return (
-    process.env.LINE_CALLBACK_URL ||
-    new URL("/api/auth/line/callback", request.url).toString()
-  );
+  const requestUrl = new URL(request.url);
+
+  if (isLocalHost(requestUrl.hostname)) {
+    return new URL("/api/auth/line/callback", requestUrl).toString();
+  }
+
+  return process.env.LINE_CALLBACK_URL || new URL("/api/auth/line/callback", requestUrl).toString();
 }
 
 export async function GET(request: Request) {
   const channelId = process.env.LINE_CHANNEL_ID;
+  const channelSecret = process.env.LINE_CHANNEL_SECRET;
   const callbackUrl = getCallbackUrl(request);
 
-  if (!channelId) {
+  if (!channelId || !channelSecret) {
     return NextResponse.json(
       { error: "LINE Login is not configured" },
       { status: 500 }
     );
   }
 
-  const state = crypto.randomBytes(16).toString("hex");
+  const state = createLineOAuthState(channelSecret);
 
   const params = new URLSearchParams({
     response_type: "code",
@@ -31,14 +39,5 @@ export async function GET(request: Request) {
 
   const authorizeUrl = `https://access.line.me/oauth2/v2.1/authorize?${params.toString()}`;
 
-  const response = NextResponse.redirect(authorizeUrl);
-  response.cookies.set("line_oauth_state", state, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 600, // 10 minutes
-    path: "/",
-  });
-
-  return response;
+  return NextResponse.redirect(authorizeUrl);
 }

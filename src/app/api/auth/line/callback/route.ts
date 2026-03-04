@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { verifyLineOAuthState } from "@/lib/line-oauth-state";
 
 interface LineTokenResponse {
   access_token: string;
@@ -17,11 +18,18 @@ interface LineProfile {
   statusMessage?: string;
 }
 
+function isLocalHost(hostname: string) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
 function getCallbackUrl(request: NextRequest) {
-  return (
-    process.env.LINE_CALLBACK_URL ||
-    new URL("/api/auth/line/callback", request.url).toString()
-  );
+  const requestUrl = new URL(request.url);
+
+  if (isLocalHost(requestUrl.hostname)) {
+    return new URL("/api/auth/line/callback", requestUrl).toString();
+  }
+
+  return process.env.LINE_CALLBACK_URL || new URL("/api/auth/line/callback", requestUrl).toString();
 }
 
 export async function GET(request: NextRequest) {
@@ -32,19 +40,16 @@ export async function GET(request: NextRequest) {
   const channelId = process.env.LINE_CHANNEL_ID;
   const channelSecret = process.env.LINE_CHANNEL_SECRET;
 
-  const savedState = request.cookies.get("line_oauth_state")?.value;
-
-  // Validate state to prevent CSRF
-  if (!state || state !== savedState) {
-    return NextResponse.redirect(new URL("/login?error=invalid_state", request.url));
-  }
-
   if (error || !code) {
     return NextResponse.redirect(new URL("/login?error=access_denied", request.url));
   }
 
   if (!channelId || !channelSecret) {
     return NextResponse.redirect(new URL("/login?error=config_missing", request.url));
+  }
+
+  if (!state || !verifyLineOAuthState(state, channelSecret)) {
+    return NextResponse.redirect(new URL("/login?error=invalid_state", request.url));
   }
 
   try {
@@ -125,9 +130,6 @@ export async function GET(request: NextRequest) {
         path: "/",
       }
     );
-
-    // Clean up OAuth state cookie
-    response.cookies.delete("line_oauth_state");
 
     return response;
   } catch (err) {
