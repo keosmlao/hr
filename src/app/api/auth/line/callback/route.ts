@@ -17,11 +17,20 @@ interface LineProfile {
   statusMessage?: string;
 }
 
+function getCallbackUrl(request: NextRequest) {
+  return (
+    process.env.LINE_CALLBACK_URL ||
+    new URL("/api/auth/line/callback", request.url).toString()
+  );
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
   const state = searchParams.get("state");
   const error = searchParams.get("error");
+  const channelId = process.env.LINE_CHANNEL_ID;
+  const channelSecret = process.env.LINE_CHANNEL_SECRET;
 
   const savedState = request.cookies.get("line_oauth_state")?.value;
 
@@ -34,7 +43,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login?error=access_denied", request.url));
   }
 
+  if (!channelId || !channelSecret) {
+    return NextResponse.redirect(new URL("/login?error=config_missing", request.url));
+  }
+
   try {
+    const callbackUrl = getCallbackUrl(request);
+
     // Exchange code for access token
     const tokenResponse = await fetch("https://api.line.me/oauth2/v2.1/token", {
       method: "POST",
@@ -42,9 +57,9 @@ export async function GET(request: NextRequest) {
       body: new URLSearchParams({
         grant_type: "authorization_code",
         code,
-        redirect_uri: process.env.LINE_CALLBACK_URL!,
-        client_id: process.env.LINE_CHANNEL_ID!,
-        client_secret: process.env.LINE_CHANNEL_SECRET!,
+        redirect_uri: callbackUrl,
+        client_id: channelId,
+        client_secret: channelSecret,
       }),
     });
 

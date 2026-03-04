@@ -1,11 +1,18 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 
-export async function GET() {
-  const channelId = process.env.LINE_CHANNEL_ID;
-  const callbackUrl = process.env.LINE_CALLBACK_URL;
+function getCallbackUrl(request: Request) {
+  return (
+    process.env.LINE_CALLBACK_URL ||
+    new URL("/api/auth/line/callback", request.url).toString()
+  );
+}
 
-  if (!channelId || !callbackUrl) {
+export async function GET(request: Request) {
+  const channelId = process.env.LINE_CHANNEL_ID;
+  const callbackUrl = getCallbackUrl(request);
+
+  if (!channelId) {
     return NextResponse.json(
       { error: "LINE Login is not configured" },
       { status: 500 }
